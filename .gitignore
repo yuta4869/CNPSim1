@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+.DS_Store
+build/
+dist/
+outputs/*
+!outputs/bidmc/
+outputs/bidmc/*
+!outputs/bidmc/best_model.pt
+!outputs/bidmc/results.json
+!outputs/bidmc/example_gap30.png
+data/bidmc/raw/

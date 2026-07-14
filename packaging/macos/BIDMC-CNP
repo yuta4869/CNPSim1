@@ -1,0 +1,52 @@
+#!/bin/zsh
+
+set -u
+
+SCRIPT_DIR="${0:A:h}"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
+PYTHON_HINT_FILE="$SCRIPT_DIR/../Resources/python-path"
+BUILD_PYTHON=""
+LOG_DIR="$HOME/Library/Logs/BIDMC-CNP-Query-Explorer"
+CACHE_DIR="$HOME/Library/Caches/BIDMC-CNP-Query-Explorer/matplotlib"
+
+/bin/mkdir -p "$LOG_DIR" "$CACHE_DIR"
+
+if [[ -f "$PYTHON_HINT_FILE" ]]; then
+    IFS= read -r BUILD_PYTHON < "$PYTHON_HINT_FILE"
+fi
+
+if [[ -n "${CNP_PYTHON:-}" && -x "${CNP_PYTHON:-}" ]]; then
+    PYTHON="$CNP_PYTHON"
+elif [[ -x "$PROJECT_ROOT/.venv/bin/python" ]]; then
+    PYTHON="$PROJECT_ROOT/.venv/bin/python"
+elif [[ -n "$BUILD_PYTHON" && -x "$BUILD_PYTHON" ]]; then
+    PYTHON="$BUILD_PYTHON"
+else
+    PYTHON="$(/usr/bin/which python3 2>/dev/null || true)"
+fi
+
+if [[ ! -x "$PYTHON" ]]; then
+    /usr/bin/osascript -e 'display alert "BIDMC CNP Query Explorer" message "Python環境が見つかりません。.venvを作成するか、CNP_PYTHONを設定してください。" as critical'
+    exit 1
+fi
+
+if [[ ! -f "$PROJECT_ROOT/apps/bidmc_desktop.py" ]]; then
+    /usr/bin/osascript -e 'display alert "BIDMC CNP Query Explorer" message "プロジェクトが見つかりません。.appはリポジトリ内のdistフォルダーから起動してください。" as critical'
+    exit 1
+fi
+
+export PYTHONPATH="$PROJECT_ROOT/src"
+export PYTHONNOUSERSITE=1
+export MPLCONFIGDIR="$CACHE_DIR"
+export PATH="${PYTHON:h}:/usr/bin:/bin:/usr/sbin:/sbin"
+
+cd "$PROJECT_ROOT" || exit 1
+
+# Import failures happen before the Python app can show its own error dialog.
+# Check them here so a Finder launch never appears to fail silently.
+if ! "$PYTHON" -c 'import tkinter; import matplotlib; matplotlib.use("TkAgg"); from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg; from cnp.bidmc_demo import BIDMCDemoRuntime' >>"$LOG_DIR/app.log" 2>&1; then
+    /usr/bin/osascript -e 'display alert "BIDMC CNP Query Explorer" message "必要なPythonライブラリを読み込めませんでした。ログを確認してください: ~/Library/Logs/BIDMC-CNP-Query-Explorer/app.log" as critical'
+    exit 1
+fi
+
+exec "$PYTHON" "$PROJECT_ROOT/apps/bidmc_desktop.py" >>"$LOG_DIR/app.log" 2>&1
