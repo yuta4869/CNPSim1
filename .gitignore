@@ -12,4 +12,11 @@ outputs/bidmc/*
 !outputs/bidmc/best_model.pt
 !outputs/bidmc/results.json
 !outputs/bidmc/example_gap30.png
+!outputs/sincos/
+outputs/sincos/*
+!outputs/sincos/best_model.pt
+!outputs/sincos/results.json
+!outputs/sincos/learning_curve.png
+!outputs/sincos/context_sweep.png
+!outputs/sincos/anchor_predictions.png
 data/bidmc/raw/

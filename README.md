@@ -1,11 +1,15 @@
 # CNPSim1: heart-rate interpolation with a standalone CNP
 
-`myunusseker/CNMP`からmovement固有部分を外し、Conditional Neural Process（CNP）の核を独立したPyTorch packageとして実装した研究用プロトタイプです。BIDMCの時刻付き心拍数を使った患者非重複の欠損補間実験、学習済みcheckpoint、評価結果、macOSネイティブGUIを収録しています。
+`myunusseker/CNMP`からmovement固有部分を外し、Conditional Neural Process（CNP）の核を独立したPyTorch packageとして実装した研究用プロトタイプです。Sin/Cosの固定function bankによるsynthetic benchmarkと、BIDMCの時刻付き心拍数を使った患者非重複の欠損補間実験、学習済みcheckpoint、評価結果、macOSネイティブGUIを収録しています。
 
 ## 現状
 
 パイプラインは成立しましたが、現在の基本CNPを心拍補間に採用する性能上の根拠はまだありません。
 
+- Sin/Cos未知関数の全域補間は、Context 3→20でRMSE 0.5296→0.1829へ改善
+- 中央Gap補間はContext 5のRMSE 0.1798が最良で、Context 20では0.2881へ悪化
+- Sin/Cos benchmarkでもContext 20の中央Gapは線形補間0.2022に敗ける
+- 高周波OOD、pure Sin/Cos間の精度差、予測区間校正は未解決
 - BIDMC 53記録・46患者を患者単位で32 train / 7 validation / 7 testへ分割
 - 学習データは36記録、144個の120秒窓、固有17,280 HR点（4.8時間）
 - 実行はstep 1,000でearly stop、アプリが使うbest checkpointはstep 500
@@ -15,13 +19,18 @@
 - CNPは全6条件でContext平均にも劣る
 - 95%予測区間のcoverageは約99.8–100%、平均幅は約13.2 bpmで過度に保守的
 
-この結果は人工欠損を使った固定split・1 seedのPoCであり、臨床性能を示すものではありません。正確な学習量、論文との比較、既知課題、次の実験は[学習監査と課題](docs/TRAINING_AUDIT.md)にまとめています。実験条件と全MAE表は[BIDMC実験記録](docs/BIDMC_EXPERIMENT.md)を参照してください。
+どちらも固定split・1 seedの研究用PoCであり、臨床性能を示すものではありません。Sin/Cosの入力、学習量、固定評価、全結果は[Sin/Cos benchmark](docs/SINCOS_BENCHMARK.md)にまとめています。心拍側の正確な学習量、論文との比較、既知課題、次の実験は[学習監査と課題](docs/TRAINING_AUDIT.md)、実験条件と全MAE表は[BIDMC実験記録](docs/BIDMC_EXPERIMENT.md)を参照してください。
+
+![Sin/Cos Context sweep](outputs/sincos/context_sweep.png)
 
 ![BIDMC 30-second gap example](outputs/bidmc/example_gap30.png)
 
 ## 収録内容
 
 - `src/cnp/`: deterministic CNP、Gaussian NLL、sampling、BIDMC adapter
+- `src/cnp/synthetic.py`: Sin/Cos parameter bank、固定評価task、metrics、baseline
+- `examples/train_sincos.py`: synthetic学習、未知関数評価、可視化
+- `outputs/sincos/`: best checkpoint、全評価値、学習曲線、Context曲線
 - `examples/train_bidmc.py`: 学習・患者macro評価・補間baseline比較
 - `outputs/bidmc/best_model.pt`: step 500の学習済みcheckpoint
 - `outputs/bidmc/results.json`: 設定、split、学習履歴、全評価値
@@ -59,6 +68,16 @@ python scripts/download_bidmc.py
 ダウンローダーは`data/bidmc/SHA256SUMS.txt`を使って全ファイルを検証します。
 
 ## 学習の再実行
+
+Sin/Cos synthetic benchmark:
+
+```bash
+python examples/train_sincos.py --device auto
+```
+
+既定では4,096 train functions、256 validation、256 ID test、256 frequency-OOD、pure Sin/Cos各128本を固定します。各stepで64関数、関数ごとにContext 3〜20点、Query 32点をsampleし、最大10,000 steps学習します。全域補間、中央Gap補間、外挿stressをContext数別に評価し、結果を`outputs/sincos/`へ保存します。
+
+BIDMC:
 
 ```bash
 python examples/train_bidmc.py --device auto
