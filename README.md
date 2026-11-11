@@ -1,11 +1,21 @@
 # CNPSim1: heart-rate interpolation with a standalone CNP
 
-`myunusseker/CNMP`からmovement固有部分を外し、Conditional Neural Process（CNP）の核を独立したPyTorch packageとして実装した研究用プロトタイプです。BIDMCの時刻付き心拍数を使った患者非重複の欠損補間実験、学習済みcheckpoint、評価結果、macOSネイティブGUIを収録しています。
+`myunusseker/CNMP`からmovement固有部分を外し、Conditional Neural Process（CNP）の核を独立したPyTorch packageとして実装した研究用プロトタイプです。固定Sin/Cos、未知parameterのSin/Cos、毎episode新しい関数を生成するRBF-GP、BIDMCの時刻付き心拍数を使った患者非重複の欠損補間実験、学習済みcheckpoint、評価結果、macOSネイティブGUIを収録しています。
 
 ## 現状
 
 パイプラインは成立しましたが、現在の基本CNPを心拍補間に採用する性能上の根拠はまだありません。
 
+- Sin/Cos未知関数の全域補間は、Context 3→20でRMSE 0.5296→0.1829へ改善
+- 固定`sin(x)` / `cos(x)`は3段階のstrict sanity gateをすべて通過
+- 共有Sin/Cos CNPはContext 10でRMSE 0.0100、各functionの100 Context抽選p95のmacro平均は0.0148
+- 反対functionのContextへ入れ替えるとRMSEは約1.0となり、Context依存を確認
+- RBF-GP未知関数はContext 3→20でRMSE 0.7712→0.5283へ31.5%改善し、固定gateをPASS
+- RBF-GPのContext 20ではanalytic GP posteriorが0.0706で、CNPとの近似精度差はまだ大きい
+- RBF-GPは10,000 stepでもvalidation改善中で、正常性は確認できたが十分収束していない
+- 中央Gap補間はContext 5のRMSE 0.1798が最良で、Context 20では0.2881へ悪化
+- Sin/Cos benchmarkでもContext 20の中央Gapは線形補間0.2022に敗ける
+- 高周波OOD、pure Sin/Cos間の精度差、予測区間校正は未解決
 - BIDMC 53記録・46患者を患者単位で32 train / 7 validation / 7 testへ分割
 - 学習データは36記録、144個の120秒窓、固有17,280 HR点（4.8時間）
 - 実行はstep 1,000でearly stop、アプリが使うbest checkpointはstep 500
@@ -15,17 +25,35 @@
 - CNPは全6条件でContext平均にも劣る
 - 95%予測区間のcoverageは約99.8–100%、平均幅は約13.2 bpmで過度に保守的
 
-この結果は人工欠損を使った固定split・1 seedのPoCであり、臨床性能を示すものではありません。正確な学習量、論文との比較、既知課題、次の実験は[学習監査と課題](docs/TRAINING_AUDIT.md)にまとめています。実験条件と全MAE表は[BIDMC実験記録](docs/BIDMC_EXPERIMENT.md)を参照してください。
+すべて固定条件・1 seedの研究用PoCであり、臨床性能を示すものではありません。最小の合否試験は[Canonical Sin/Cos sanity check](docs/CANONICAL_SANITY.md)、未知parameterの結果は[Sin/Cos benchmark](docs/SINCOS_BENCHMARK.md)、CNP原論文に近い関数分布検証・公式200,000 stepとの差・全実測値は[RBF-GP benchmark](docs/RBF_GP_BENCHMARK.md)にまとめています。心拍側は[学習監査と課題](docs/TRAINING_AUDIT.md)と[BIDMC実験記録](docs/BIDMC_EXPERIMENT.md)を参照してください。
+
+![Canonical Sin/Cos predictions](outputs/sanity/predictions.png)
+
+![RBF-GP Context sweep](outputs/rbf_gp/context_sweep.png)
+
+![Sin/Cos Context sweep](outputs/sincos/context_sweep.png)
 
 ![BIDMC 30-second gap example](outputs/bidmc/example_gap30.png)
 
 ## 収録内容
 
 - `src/cnp/`: deterministic CNP、Gaussian NLL、sampling、BIDMC adapter
+- `src/cnp/synthetic.py`: Sin/Cos parameter bank、固定評価task、metrics、baseline
+- `src/cnp/sanity.py`: 固定Sin/Cosの段階的sanity taskと固定評価
+- `src/cnp/sanity_demo.py`: canonical GUI用のcheckpoint検証と推論runtime
+- `src/cnp/rbf_gp.py`: RBF kernel、GP sampling、analytic posterior、固定評価
+- `src/cnp/rbf_gp_demo.py`: RBF-GP GUI用のcheckpoint検証とexact Query推論runtime
+- `examples/train_sanity.py`: Single Sin / Single Cos / Shared Sin+Cosの合否試験
+- `outputs/sanity/`: 3 modelを含むcheckpoint、全gate結果、学習曲線、予測plot
+- `examples/train_rbf_gp.py`: 毎episode新規GP関数による学習、oracle比較、gate
+- `outputs/rbf_gp/`: best checkpoint、全metric、学習曲線、Context比較、予測plot
+- `examples/train_sincos.py`: synthetic学習、未知関数評価、可視化
+- `outputs/sincos/`: best checkpoint、全評価値、学習曲線、Context曲線
 - `examples/train_bidmc.py`: 学習・患者macro評価・補間baseline比較
 - `outputs/bidmc/best_model.pt`: step 500の学習済みcheckpoint
 - `outputs/bidmc/results.json`: 設定、split、学習履歴、全評価値
 - `apps/bidmc_desktop.py`: 任意Queryを指定できるTkinterデスクトップGUI
+- `apps/sanity_desktop.py`: Canonical Sin/Cos / RBF-GPを切り替えるTkinterデスクトップGUI
 - `scripts/download_bidmc.py`: PhysioNet公式ファイルの取得とSHA256検証
 - `tests/`: model、sampling、dataset、GUI runtimeの単体テスト
 - `docs/EXTRACTION_NOTES.md`: CNMPから何を残し、何を外したか
@@ -42,7 +70,7 @@ source .venv/bin/activate
 python -m pip install -e '.[app]'
 ```
 
-テスト:
+テスト（現在62件）:
 
 ```bash
 python -m unittest discover -s tests -v
@@ -60,13 +88,39 @@ python scripts/download_bidmc.py
 
 ## 学習の再実行
 
+最初に行う固定Sin/Cos sanity check:
+
+```bash
+python examples/train_sanity.py --device auto
+```
+
+`sin(x)`だけ、`cos(x)`だけ、functionラベルなしで両方を扱う共有CNPを各10,000 step学習します。Context 10で各functionの平均RMSE `<0.04`、100 Context抽選のp95 `<0.05`、共有modelのContext入替差 `>0.8`を固定gateとして判定します。結果は`outputs/sanity/`へ保存されます。
+
+RBF-GP function benchmark:
+
+```bash
+python examples/train_rbf_gp.py --device auto
+```
+
+`x∈[-2,2]`、RBF length scale `0.4`、signal std `1.0`、noise std `0.02`から各episodeで新しいGP関数を生成します。既定では64関数×10,000 step（640,000 episode）を学習し、独立したvalidation/test、Context 3/5/10/20、analytic GP posterior、Context meanを比較します。収録runは固定gateをPASSしましたが、10,000 stepでも改善中です。完全な条件と結果は[RBF-GP benchmark](docs/RBF_GP_BENCHMARK.md)を参照してください。
+
+Sin/Cos synthetic benchmark:
+
+```bash
+python examples/train_sincos.py --device auto
+```
+
+既定では4,096 train functions、256 validation、256 ID test、256 frequency-OOD、pure Sin/Cos各128本を固定します。各stepで64関数、関数ごとにContext 3〜20点、Query 32点をsampleし、最大10,000 steps学習します。全域補間、中央Gap補間、外挿stressをContext数別に評価し、結果を`outputs/sincos/`へ保存します。
+
+BIDMC:
+
 ```bash
 python examples/train_bidmc.py --device auto
 ```
 
 既定では、ランダム欠損10/30/50%と連続欠損5/15/30秒を学習・評価し、線形補間、最近傍、Context平均と比較します。生成物は`outputs/bidmc/`に保存されます。現在収録している結果を上書きしたくない場合は`--output-dir`で別フォルダーを指定してください。
 
-収録結果はPython 3.10.20、PyTorch 2.13.0、macOS 15.7.4 arm64、Apple MPSで生成しました。依存versionはlockしておらず、MPSを含む実行環境差があるため、同じseedでもbest stepや最終数値の完全一致は保証しません。コマンドはデータ処理・学習・評価パイプラインの再実行用です。
+Canonical / SinCos / BIDMCの既存収録結果はPython 3.10.20・PyTorch 2.13.0、今回のRBF-GP収録runはPython 3.9.6・PyTorch 2.8.0で生成しました。どちらもmacOS 15.7.4 arm64・Apple MPSです。依存versionはlockしておらず、MPSを含む実行環境差があるため、同じseedでもbest stepや最終数値の完全一致は保証しません。コマンドはデータ処理・学習・評価パイプラインの再実行用です。
 
 短い汎用CNP例:
 
@@ -75,6 +129,23 @@ python examples/toy_regression.py --steps 500 --device auto
 ```
 
 ## デスクトップアプリ
+
+### Synthetic CNP Function GUI
+
+ブラウザ、Web server、外部datasetは不要です。`Canonical Sin / Cos`と`RBF-GP（未知関数）`を切り替え、Context数、Context seed、任意Query Xを操作できます。RBF-GP modeではfunction seedで未知関数を再生成し、CNPと真のkernelを知るanalytic GP posteriorを同じplotで比較します。function情報とQueryの正解YはCNP入力に渡しません。
+
+```bash
+python apps/sanity_desktop.py
+```
+
+Finderから起動:
+
+```bash
+zsh scripts/build_sanity_macos_app.sh
+open 'dist/CNP Function Explorer.app'
+```
+
+### BIDMC heart-rate GUI
 
 ブラウザやWebサーバーは使いません。患者、記録、120秒窓、Query時刻、人工的な連続欠損幅を選び、CNP平均、pointwise 95%区間、正解HR、線形補間を比較できます。
 
